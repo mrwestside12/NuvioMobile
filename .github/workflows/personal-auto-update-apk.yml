@@ -110,13 +110,12 @@ jobs:
           export APK_STORE_PASSWORD="$store_password"
           export APK_KEY_PASSWORD="$key_password"
           expected_signer=$(
-            keytool -list -v \
+            keytool -exportcert \
               -keystore "$PERSONAL_KEYSTORE" \
               -storepass "$store_password" \
               -alias "$key_alias" |
-              sed -n 's/^[[:space:]]*SHA256: //p' |
-              tr '[:upper:]' '[:lower:]' |
-              tr -d ':[:space:]'
+              sha256sum |
+              cut -d ' ' -f 1
           )
           output_dir="$RUNNER_TEMP/personal-apks"
           mkdir -p "$output_dir"
