@@ -49,6 +49,7 @@ jobs:
           printf '%s' "$NUVIO_SIGNING_KEY_BASE64" | base64 --decode > "$key_path"
           sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_STORE_FILE)[[:space:]]*=/d' local.properties
           printf '\nNUVIO_RELEASE_STORE_FILE=%s\n' "$key_path" >> local.properties
+          echo "PERSONAL_KEYSTORE=$key_path" >> "$GITHUB_ENV"
 
           required_properties=(
             NUVIO_RELEASE_STORE_PASSWORD
@@ -100,10 +101,20 @@ jobs:
       - name: Verify and name personal APKs
         env:
           VERSION_NAME: ${{ steps.version.outputs.name }}
-          EXPECTED_CERT_SHA256: c7aeb1276fdab6ef77cf473ddf4c46146b0bbeaf1893636d31a259b37242eead
         run: |
           set -euo pipefail
           apksigner_path=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          store_password=$(sed -n 's/^NUVIO_RELEASE_STORE_PASSWORD=//p' local.properties | head -n 1)
+          key_alias=$(sed -n 's/^NUVIO_RELEASE_KEY_ALIAS=//p' local.properties | head -n 1)
+          expected_signer=$(
+            keytool -list -v \
+              -keystore "$PERSONAL_KEYSTORE" \
+              -storepass "$store_password" \
+              -alias "$key_alias" |
+              sed -n 's/^[[:space:]]*SHA256: //p' |
+              tr '[:upper:]' '[:lower:]' |
+              tr -d ':[:space:]'
+          )
           output_dir="$RUNNER_TEMP/personal-apks"
           mkdir -p "$output_dir"
           found=0
@@ -117,7 +128,7 @@ jobs:
                 tr '[:upper:]' '[:lower:]' |
                 tr -d ':[:space:]'
             )
-            if [ "$signer" != "$EXPECTED_CERT_SHA256" ]; then
+            if [ -z "$expected_signer" ] || [ "$signer" != "$expected_signer" ]; then
               echo "Unexpected APK signer."
               exit 1
             fi
