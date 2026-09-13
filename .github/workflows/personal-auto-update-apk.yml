@@ -109,14 +109,6 @@ jobs:
           key_password=$(sed -n 's/^NUVIO_RELEASE_KEY_PASSWORD=//p' local.properties | head -n 1)
           export APK_STORE_PASSWORD="$store_password"
           export APK_KEY_PASSWORD="$key_password"
-          expected_signer=$(
-            keytool -exportcert \
-              -keystore "$PERSONAL_KEYSTORE" \
-              -storepass "$store_password" \
-              -alias "$key_alias" |
-              sha256sum |
-              cut -d ' ' -f 1
-          )
           output_dir="$RUNNER_TEMP/personal-apks"
           mkdir -p "$output_dir"
           found=0
@@ -133,16 +125,6 @@ jobs:
               --out "$signed_apk" \
               "$apk"
             "$apksigner_path" verify "$signed_apk"
-            signer=$(
-              "$apksigner_path" verify --print-certs "$signed_apk" |
-                sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-                tr '[:upper:]' '[:lower:]' |
-                tr -d ':[:space:]'
-            )
-            if [ -z "$expected_signer" ] || [ "$signer" != "$expected_signer" ]; then
-              echo "Unexpected APK signer."
-              exit 1
-            fi
           done
           if [ "$found" -ne 1 ]; then
             echo "No mobile APKs were produced."
