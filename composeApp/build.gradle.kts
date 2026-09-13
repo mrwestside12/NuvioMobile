@@ -43,6 +43,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:Input
     abstract val sentryEnvironment: Property<String>
 
+    @get:Input
+    abstract val tmdbApiKey: Property<String>
+
     @TaskAction
     fun generate() {
         val props = Properties()
@@ -78,7 +81,18 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
             )
         }
 
-        outDir.resolve("com/nuvio/app/features/tmdb/TmdbConfig.kt").delete()
+        outDir.resolve("com/nuvio/app/features/tmdb").apply {
+            mkdirs()
+            resolve("TmdbConfig.kt").writeText(
+                """
+                |package com.nuvio.app.features.tmdb
+                |
+                |object TmdbConfig {
+                |    const val API_KEY = "${tmdbApiKey.get()}"
+                |}
+                """.trimMargin()
+            )
+        }
 
         outDir.resolve("com/nuvio/app/features/trakt").apply {
             mkdirs()
@@ -302,6 +316,7 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
     supabaseAnonKey.set(runtimeConfigValue("NUVIO_SUPABASE_ANON_KEY"))
     supabaseFallbackUrl.set(runtimeConfigValue("NUVIO_SUPABASE_FALLBACK_URL"))
     sentryDsn.set(runtimeConfigValue("SENTRY_DSN"))
+    tmdbApiKey.set(runtimeConfigValue("TMDB_API_KEY"))
     sentryEnvironment.set(
         when {
             requestedGradleTasks.any { "benchmark" in it } -> "benchmark"
