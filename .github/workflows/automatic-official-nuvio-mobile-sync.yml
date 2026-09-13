@@ -1,0 +1,184 @@
+name: Automatic Official Nuvio Mobile Sync
+
+on:
+  schedule:
+    - cron: "47 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: automatic-official-nuvio-mobile-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-test-and-release:
+    name: Preserve Mobile Shuffle on the latest official release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NUVIO_LOCAL_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
+      NUVIO_SIGNING_KEY_BASE64: ${{ secrets.NUVIO_RELEASE_KEYSTORE_BASE64 }}
+      NUVIO_PERSONAL_UPDATE_BUILD: "true"
+      NUVIO_UPDATE_GITHUB_OWNER: "mrwestside12"
+
+    steps:
+      - name: Checkout personal mobile branch
+        uses: actions/checkout@v6
+        with:
+          ref: cmp-rewrite
+          fetch-depth: 0
+
+      - name: Find a new official mobile release
+        id: release
+        run: |
+          set -euo pipefail
+          latest_release=$(gh api repos/NuvioMedia/NuvioMobile/releases/latest --jq .tag_name)
+          if [[ ! "$latest_release" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Unexpected upstream release tag: $latest_release"
+            exit 1
+          fi
+          current_release=$(tr -d '[:space:]' < .github/personal-updater/upstream-release.txt)
+          echo "tag=$latest_release" >> "$GITHUB_OUTPUT"
+          if [ "$latest_release" = "$current_release" ]; then
+            echo "update_found=false" >> "$GITHUB_OUTPUT"
+            echo "Official Nuvio Mobile $latest_release is already integrated." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "update_found=true" >> "$GITHUB_OUTPUT"
+            echo "Preparing official Nuvio Mobile $latest_release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Merge the official release without publishing
+        if: steps.release.outputs.update_found == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add official https://github.com/NuvioMedia/NuvioMobile.git
+          git fetch --force --no-tags official "refs/tags/$UPSTREAM_TAG:refs/tags/automatic-upstream-release"
+          git merge --no-ff --no-commit refs/tags/automatic-upstream-release
+
+      - name: Confirm Mobile Shuffle and updater survived
+        if: steps.release.outputs.update_found == 'true'
+        run: |
+          set -euo pipefail
+          test -f composeApp/src/commonMain/kotlin/com/nuvio/app/features/details/RandomEpisodePicker.kt
+          test -f composeApp/src/commonTest/kotlin/com/nuvio/app/features/details/RandomEpisodePickerTest.kt
+          grep -q 'shuffleSession' composeApp/src/commonMain/kotlin/com/nuvio/app/features/player/PlayerScreenRuntimeEffects.kt
+          grep -q 'UPDATE_GITHUB_OWNER' composeApp/src/commonMain/kotlin/com/nuvio/app/features/updater/AppUpdater.kt
+          grep -q 'NUVIO_UPDATE_GITHUB_OWNER' composeApp/build.gradle.kts
+
+      - name: Set up Java
+        if: steps.release.outputs.update_found == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        if: steps.release.outputs.update_found == 'true'
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Verify services against the official mobile APK
+        if: steps.release.outputs.update_found == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NUVIO_LOCAL_PROPERTIES_BASE64" ] || [ -z "$NUVIO_SIGNING_KEY_BASE64" ]; then
+            echo "Mobile signing or service configuration is not configured."
+            exit 1
+          fi
+          printf '%s' "$NUVIO_LOCAL_PROPERTIES_BASE64" | base64 --decode > local.properties
+          key_path="$RUNNER_TEMP/nuvio-mobile-personal.jks"
+          printf '%s' "$NUVIO_SIGNING_KEY_BASE64" | base64 --decode > "$key_path"
+          sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_STORE_FILE)[[:space:]]*=/d' local.properties
+          printf '\nNUVIO_RELEASE_STORE_FILE=%s\n' "$key_path" >> local.properties
+
+          mkdir -p "$RUNNER_TEMP/official-apk" "$RUNNER_TEMP/official-dex"
+          gh release download "$UPSTREAM_TAG" \
+            --repo NuvioMedia/NuvioMobile \
+            --pattern 'androidApp-full-arm64-v8a-release.apk' \
+            --dir "$RUNNER_TEMP/official-apk"
+          unzip -q -j "$RUNNER_TEMP/official-apk/androidApp-full-arm64-v8a-release.apk" \
+            'classes*.dex' -d "$RUNNER_TEMP/official-dex"
+
+          service_keys=(
+            NUVIO_SUPABASE_URL
+            NUVIO_SUPABASE_ANON_KEY
+            NUVIO_SUPABASE_FALLBACK_URL
+            TRAKT_CLIENT_ID
+            TRAKT_CLIENT_SECRET
+            TRAKT_REDIRECT_URI
+            SIMKL_CLIENT_ID
+            SIMKL_REDIRECT_URI
+            SIMKL_APP_NAME
+            INTRODB_API_URL
+            IMDB_RATINGS_API_BASE_URL
+            IMDB_TAPFRAME_API_BASE_URL
+            CONTRIBUTIONS_URL
+            SUPPORTERS_WALL_URL
+            DONATIONS_BASE_URL
+            DONATIONS_DONATE_URL
+          )
+          for key in "${service_keys[@]}"; do
+            value=$(sed -n "s/^${key}=//p" local.properties | head -n 1)
+            if [ -z "$value" ]; then
+              echo "Required mobile service setting $key is empty."
+              exit 1
+            fi
+            if ! grep -aFq -- "$value" "$RUNNER_TEMP"/official-dex/classes*.dex; then
+              echo "Saved mobile service setting $key no longer matches the official APK."
+              echo "The update stopped before changing the fork or publishing an APK."
+              exit 1
+            fi
+          done
+
+      - name: Test Mobile Shuffle and full Android release
+        if: steps.release.outputs.update_found == 'true'
+        run: |
+          ./gradlew \
+            :composeApp:testAndroidHostTest \
+            --tests 'com.nuvio.app.features.details.RandomEpisodePickerTest' \
+            :androidApp:assembleFullRelease \
+            --no-daemon \
+            --stacktrace
+
+      - name: Save the verified official mobile update
+        if: steps.release.outputs.update_found == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$UPSTREAM_TAG" > .github/personal-updater/upstream-release.txt
+          git add .github/personal-updater/upstream-release.txt
+          git commit -m "chore: sync official Nuvio Mobile $UPSTREAM_TAG"
+          git push origin HEAD:cmp-rewrite
+
+      - name: Publish the verified personal mobile update
+        if: steps.release.outputs.update_found == 'true'
+        run: |
+          gh workflow run personal-auto-update-apk.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref cmp-rewrite
+          echo "The permanent-signing mobile release build has been started." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report a safely stopped mobile update
+        if: failure() && steps.release.outputs.update_found == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          title="Automatic Nuvio Mobile update needs attention"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty' || true)
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body "Official Nuvio Mobile $UPSTREAM_TAG could not be merged, verified, or built automatically. Your current working APK and cmp-rewrite branch were left unchanged. Open the failed Actions run for details." || true
+          fi
+          echo "The mobile update stopped safely. The existing release and branch were not replaced." >> "$GITHUB_STEP_SUMMARY"

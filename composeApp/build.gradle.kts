@@ -29,6 +29,9 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     abstract val personalUpdateBuild: Property<Boolean>
 
     @get:Input
+    abstract val updateGithubOwner: Property<String>
+
+    @get:Input
     abstract val supabaseUrl: Property<String>
 
     @get:Input
@@ -174,6 +177,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |    const val VERSION_NAME = "${appVersionName.get()}"
                 |    const val VERSION_CODE = ${appVersionCode.get()}
                 |    const val PERSONAL_UPDATE_BUILD = ${personalUpdateBuild.get()}
+                |    const val UPDATE_GITHUB_OWNER = "${updateGithubOwner.get()}"
                 |}
                 """.trimMargin()
             )
@@ -312,6 +316,12 @@ val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generat
     appVersionName.set(effectiveAppVersionName)
     appVersionCode.set(effectiveAppVersionCode)
     personalUpdateBuild.set(providers.environmentVariable("NUVIO_PERSONAL_UPDATE_BUILD").orNull == "true")
+    updateGithubOwner.set(
+        providers.environmentVariable("NUVIO_UPDATE_GITHUB_OWNER").orNull
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: "NuvioMedia"
+    )
     supabaseUrl.set(runtimeConfigValue("NUVIO_SUPABASE_URL"))
     supabaseAnonKey.set(runtimeConfigValue("NUVIO_SUPABASE_ANON_KEY"))
     supabaseFallbackUrl.set(runtimeConfigValue("NUVIO_SUPABASE_FALLBACK_URL"))
