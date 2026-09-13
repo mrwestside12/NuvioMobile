@@ -114,7 +114,8 @@ jobs:
             signer=$(
               "$apksigner_path" verify --print-certs "$apk" |
                 sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-                tr '[:upper:]' '[:lower:]'
+                tr '[:upper:]' '[:lower:]' |
+                tr -d ':[:space:]'
             )
             if [ "$signer" != "$EXPECTED_CERT_SHA256" ]; then
               echo "Unexpected APK signer."
