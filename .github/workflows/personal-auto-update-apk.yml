@@ -150,7 +150,7 @@ jobs:
           gh release create "personal-$VERSION_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --target cmp-rewrite \
-            --prerelease \
+            --latest \
             --title "Nuvio Mobile $VERSION_NAME" \
             --notes "Personal Android build with continuous episode Shuffle, verified mobile services, permanent signing, and in-app updates from this fork." \
             "$PERSONAL_APK_DIR"/*.apk
