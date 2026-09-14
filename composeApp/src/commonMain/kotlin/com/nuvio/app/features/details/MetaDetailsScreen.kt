@@ -1046,6 +1046,7 @@ fun MetaDetailsScreen(
                                         heroTrailerReady = heroTrailerReady,
                                         heroTrailerPlayWhenReady = {
                                             heroTrailerSourceUrl != null &&
+                                                selectedTrailer == null &&
                                                 !isLeavingDetails &&
                                                 !isHeroCollapsed.value
                                         },
