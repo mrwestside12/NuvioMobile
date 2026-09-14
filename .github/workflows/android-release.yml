@@ -170,6 +170,7 @@ jobs:
             NUVIO_RELEASE_STORE_PASSWORD
             NUVIO_RELEASE_KEY_ALIAS
             NUVIO_RELEASE_KEY_PASSWORD
+            TMDB_API_KEY
             TRAKT_CLIENT_ID
             TRAKT_CLIENT_SECRET
           )

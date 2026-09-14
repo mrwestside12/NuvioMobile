@@ -57,6 +57,7 @@ jobs:
             NUVIO_RELEASE_KEY_PASSWORD
             NUVIO_SUPABASE_URL
             NUVIO_SUPABASE_ANON_KEY
+            TMDB_API_KEY
             TRAKT_CLIENT_ID
             TRAKT_CLIENT_SECRET
             TRAKT_REDIRECT_URI
