@@ -95,6 +95,7 @@ jobs:
           ./gradlew \
             :composeApp:testAndroidHostTest \
             --tests 'com.nuvio.app.features.details.RandomEpisodePickerTest' \
+            --tests 'com.nuvio.app.features.tmdb.TmdbSettingsRepositoryTest' \
             :androidApp:assembleFullRelease \
             --no-daemon \
             --stacktrace

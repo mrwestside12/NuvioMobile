@@ -34,14 +34,14 @@ class TmdbSettingsRepositoryTest {
     }
 
     @Test
-    fun enrichmentCanBeEnabledAndReloadedWithoutAPersonalKey() {
-        assertFalse(TmdbSettingsRepository.snapshot().enabled)
+    fun enrichmentDefaultsOnAndCanBeDisabledWithoutAPersonalKey() {
+        assertTrue(TmdbSettingsRepository.snapshot().enabled)
 
-        TmdbSettingsRepository.setEnabled(true)
+        TmdbSettingsRepository.setEnabled(false)
         TmdbSettingsRepository.onProfileChanged()
 
         val settings = TmdbSettingsRepository.snapshot()
-        assertTrue(settings.enabled)
+        assertFalse(settings.enabled)
         assertNull(TmdbSettingsStorage.exportToSyncPayload()["tmdb_api_key"])
     }
 
