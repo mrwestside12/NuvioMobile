@@ -79,7 +79,7 @@ private class NoChannelReleaseException : IllegalStateException(
     runBlocking { getString(Res.string.updates_no_channel_release) },
 )
 
-private object VersionUtils {
+internal object VersionUtils {
     fun normalize(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
         return raw.trim().removePrefix("v").removePrefix("V")
@@ -96,24 +96,32 @@ private object VersionUtils {
         return parts.takeIf { it.isNotEmpty() }
     }
 
-    fun isRemoteNewer(remote: String?, local: String?): Boolean {
-        val remoteParts = parseVersionParts(remote)
-        val localParts = parseVersionParts(local)
+    fun compareVersions(first: String?, second: String?): Int {
+        val firstParts = parseVersionParts(first)
+        val secondParts = parseVersionParts(second)
 
-        if (remoteParts == null || localParts == null) {
-            val remoteValue = normalize(remote)
-            val localValue = normalize(local)
-            return remoteValue.isNotBlank() && localValue.isNotBlank() && remoteValue != localValue
+        if (firstParts == null || secondParts == null) {
+            val firstValue = normalize(first)
+            val secondValue = normalize(second)
+            return when {
+                firstValue.isBlank() && secondValue.isBlank() -> 0
+                firstValue.isBlank() -> -1
+                secondValue.isBlank() -> 1
+                else -> firstValue.compareTo(secondValue)
+            }
         }
 
-        val maxSize = maxOf(remoteParts.size, localParts.size)
+        val maxSize = maxOf(firstParts.size, secondParts.size)
         for (index in 0 until maxSize) {
-            val remoteValue = remoteParts.getOrElse(index) { 0 }
-            val localValue = localParts.getOrElse(index) { 0 }
-            if (remoteValue != localValue) return remoteValue > localValue
+            val firstValue = firstParts.getOrElse(index) { 0 }
+            val secondValue = secondParts.getOrElse(index) { 0 }
+            if (firstValue != secondValue) return firstValue.compareTo(secondValue)
         }
-        return false
+        return 0
     }
+
+    fun isRemoteNewer(remote: String?, local: String?): Boolean =
+        compareVersions(remote, local) > 0
 }
 
 private object AppUpdaterRepository {
@@ -132,11 +140,20 @@ private object AppUpdaterRepository {
         }
 
         val releases = appUpdaterJson.decodeFromString<List<GitHubReleaseDto>>(response.body)
-        val release = releases.firstOrNull {
-            it.matchesRequestedChannel() &&
-                !it.draft &&
-                (!it.prerelease || AppVersionConfig.PERSONAL_UPDATE_BUILD)
-        }
+        val release = releases
+            .filter {
+                it.matchesRequestedChannel() &&
+                    !it.draft &&
+                    (!it.prerelease || AppVersionConfig.PERSONAL_UPDATE_BUILD)
+            }
+            .maxWithOrNull(
+                Comparator { first, second ->
+                    VersionUtils.compareVersions(
+                        first = first.tagName ?: first.name,
+                        second = second.tagName ?: second.name,
+                    )
+                },
+            )
             ?: throw NoChannelReleaseException()
 
         val tag = release.tagName?.takeIf { it.isNotBlank() }

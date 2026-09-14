@@ -147,6 +147,7 @@ jobs:
             :composeApp:testAndroidHostTest \
             --tests 'com.nuvio.app.features.details.RandomEpisodePickerTest' \
             --tests 'com.nuvio.app.features.tmdb.TmdbSettingsRepositoryTest' \
+            --tests 'com.nuvio.app.features.updater.AppUpdaterVersionUtilsTest' \
             :androidApp:assembleFullRelease \
             --no-daemon \
             --stacktrace
